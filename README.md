@@ -27,8 +27,9 @@ Run the script using the following command:
 
 PowerShell
 .\HardMarching.ps1
-Use code with caution. Learn more
 Follow the prompts to enter the required user information.
+Provide the SamAccountName from Ad
+Provide the users UPN from MS365
 
 ## Logging
 
