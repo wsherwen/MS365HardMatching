@@ -31,3 +31,7 @@ $CloudUser = Get-MgUser -UserId $UserPrincipalName
 
 Update-MgUser -UserId $CloudUser.Id -OnPremisesImmutableId $ImmutableId
 Write-Output "$UserPrincipalName hard matched with ImmutableId $ImmutableId"
+
+
+
+

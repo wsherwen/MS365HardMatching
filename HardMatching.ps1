@@ -1,35 +1,34 @@
 # Author: Warren Sherwen
 # Last Edit: Warren Sherwen
-# Verison: 1.0
+# Verison: 2.0
+# Notes: Updated for MSGrpah API deprecation, added logging, added retry logic for user input, added prechecks for modules.
 
 $Logfile = "$env:windir\Temp\Logs\HardMarching.log"
-Function LogWrite{
-   Param ([string]$logstring)
-   Add-content $Logfile -value $logstring
-   write-output $logstring
+Function LogWrite {
+    Param ([string]$logstring)
+    Add-content $Logfile -value $logstring
+    write-output $logstring
    
 }
 function Get-TimeStamp {
     return "[{0:dd/MM/yy} {0:HH:mm:ss}]" -f (Get-Date)
 }
 
-if (!(Test-Path "$env:windir\Temp\Logs\"))
-{
-   mkdir $env:windir\Temp\Logs\
-   LogWrite "$(Get-TimeStamp): Script has started."
-   LogWrite "$(Get-TimeStamp): Log directory created."
+if (!(Test-Path "$env:windir\Temp\Logs\")) {
+    mkdir $env:windir\Temp\Logs\
+    LogWrite "$(Get-TimeStamp): Script has started."
+    LogWrite "$(Get-TimeStamp): Log directory created."
 }
-else
-{
+else {
     LogWrite "$(Get-TimeStamp): Script has started."
     LogWrite "$(Get-TimeStamp): Log directory exists."
 }
 
 #PowerShell prechecks
-LogWrite "$(Get-TimeStamp): Checking if MSOnline is installed."
-if (!(Get-Module -ListAvailable -Name MSOnline)) {
-    LogWrite "$(Get-TimeStamp): MSOnline Module not installed."
-    LogWrite "$(Get-TimeStamp): Please run: Install-Module -Name ExchangeOnlineManagement."
+LogWrite "$(Get-TimeStamp): Checking if Microsoft.Graph.Users is installed."
+if (!(Get-Module -ListAvailable -Name Microsoft.Graph.Users)) {
+    LogWrite "$(Get-TimeStamp): Microsoft.Graph.Users Module not installed."
+    LogWrite "$(Get-TimeStamp): Please run: Install-Module -Name Microsoft.Graph.Users."
     LogWrite "$(Get-TimeStamp): Script ending, powershell closing..."
     Exit
 }
@@ -49,7 +48,7 @@ LogWrite "$(Get-TimeStamp): No further checks required."
 #User Parameters
 LogWrite "$(Get-TimeStamp): Collecting the EntraID UPN."
 $Microsoft365Users = Read-Host -Prompt 'Enter the EntraID UPN'
-LogWrite "$(Get-TimeStamp): User entered: $Microsoft365Users."
+LogWrite "$(Get-TimeStamp): User entered: $Microsoft365Users." 
 
 LogWrite "$(Get-TimeStamp): Collecting the Active Directory User Sam Account Name"
 $ADAccount = Read-Host -Prompt 'Enter the Active Directory Users Sam Account Name'
@@ -83,7 +82,8 @@ if ($validateADUser.SamAccountName -ne $ADAccount) {
             Write-Host "The user account was found."
             LogWrite "$(Get-TimeStamp): The user account was found."
             break
-        } else {
+        }
+        else {
             Write-Host "The user account was not found."
             LogWrite "$(Get-TimeStamp): Retried Sam Account Name not found."
         }
@@ -100,12 +100,11 @@ if ($validateADUser.SamAccountName -ne $ADAccount) {
 
 $ADObject = Get-ADUser -Identity $ADAccount | Select-Object UserPrincipalName, objectGUID, @{Name = 'ImmutableID'; Expression = { [System.Convert]::ToBase64String(([GUID]$_.objectGUID).ToByteArray()) } }
 
-
-Import-Module -name MSOnline
-Connect-MsolService
+Import-module -name Microsoft.Graph
+Connect-MgGraph -Scopes "User.ReadWrite.All", "Directory.ReadWrite.All"
 
 LogWrite "$(Get-TimeStamp): Collecting data from Microsoft365."
-$validateMS365User = Get-MsolUser -UserPrincipalName $Microsoft365Users -ErrorAction SilentlyContinue
+$validateMS365User = Get-MgUser -UserId $Microsoft365Users -ErrorAction SilentlyContinue
 
 $retryLimit = 3
 $retryCount = 0
@@ -121,13 +120,14 @@ if ($validateMS365User.UserPrincipalName -ne $Microsoft365Users) {
         LogWrite "$(Get-TimeStamp): Requesting upn address is retyped."
         $Microsoft365Users = Read-Host "Retype the users MS365 UPN"
         LogWrite "$(Get-TimeStamp): Valadting the upn exists MS365."
-        $validateMS365User = Get-MsolUser -UserPrincipalName $Microsoft365Users -ErrorAction SilentlyContinue
+        $validateMS365User = Get-MgUser -UserId $Microsoft365Users -ErrorAction SilentlyContinue
 
         if ($validateMS365User) {
             Write-Host "The user was found."
             LogWrite "$(Get-TimeStamp): The user was found."
             break
-        } else {
+        }
+        else {
             Write-Host "The user was not found."
             LogWrite "$(Get-TimeStamp): Retried upn not found."
         }
@@ -142,15 +142,15 @@ if ($validateMS365User.UserPrincipalName -ne $Microsoft365Users) {
     }
 }
 
-Set-MsolUser -UserPrincipalName $Microsoft365Users -ImmutableID $ADObject.ImmutableID
-$MS365UserResult = Get-MsolUser -UserPrincipalName $Microsoft365Users 
+Update-MgUser -UserId $Microsoft365Users.Id -OnPremisesImmutableId $ADObject.ImmutableID
+
+$MS365UserResult = Get-MgUser -UserId $Microsoft365Users 
 
 if ($MS365UserResult.ImmutableID = $ADObject.ImmutableID) {
     Wrtie-Host "ImmutableID has been updated: $MS365UserResult.ImmutableID"
-     }
-    else { 
-        write-Host "Failed to update the users ImmutableID. Current ImmutableID: $MS365UserResult.ImmutableID"
-    }
+}
+else { 
+    write-Host "Failed to update the users ImmutableID. Current ImmutableID: $MS365UserResult.ImmutableID"
 }
 
 LogWrite "$(Get-TimeStamp): Script ending, powershell closing..."
